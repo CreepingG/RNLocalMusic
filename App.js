@@ -82,6 +82,68 @@ export default class App extends Component {
     },
   });
 
+  componentDidMount() {
+    this.init();
+  }
+
+  async init(){
+    await TrackPlayer.setupPlayer({});
+    TrackPlayer.updateOptions({
+      stopWithApp: true,
+      capabilities: [
+        TrackPlayer.CAPABILITY_PLAY,
+        TrackPlayer.CAPABILITY_PAUSE,
+        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
+        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
+        TrackPlayer.CAPABILITY_JUMP_FORWARD,
+        TrackPlayer.CAPABILITY_JUMP_BACKWARD,
+        TrackPlayer.CAPABILITY_STOP
+      ],
+      compactCapabilities: [
+        TrackPlayer.CAPABILITY_PLAY,
+        TrackPlayer.CAPABILITY_PAUSE,
+        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
+        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
+      ]
+    });
+    
+    TrackPlayer.addEventListener('playback-state', (args) => {
+      this.updatePlayState(args.state);
+    });
+    TrackPlayer.addEventListener('playback-error', (args) => {
+      this.log(args);
+    });
+
+    const urls = await this.GetAllFiles('/storage/emulated/0/Music');
+    const files = urls.map((url, index)=>({
+      url,
+      title: this.getTitle(url),
+      id: index
+    }));
+    if (!files){
+      files.push({
+        id: 0,
+        title: 'pure',
+        url: localTrack
+      });
+    }
+    this.setState({files});
+
+    this.skipToNext(true);
+
+    this.timerID = setInterval(
+      () => this.tick(),
+      100
+    );
+  }
+
+  async tick() {
+    if (this.state.playback !== TrackPlayer.STATE_PLAYING) return;
+    this.setState({
+      position: await TrackPlayer.getPosition()
+    });
+  }
+
   getTitle(url){
     return url.match(/.*\/(.*)\.\w+$/)[1];
   }
@@ -230,68 +292,6 @@ export default class App extends Component {
 
   showPlayList(){
     this.playList.show(this.state.files, 0);
-  }
-
-  async init(){
-    await TrackPlayer.setupPlayer({});
-    TrackPlayer.updateOptions({
-      stopWithApp: true,
-      capabilities: [
-        TrackPlayer.CAPABILITY_PLAY,
-        TrackPlayer.CAPABILITY_PAUSE,
-        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
-        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
-        TrackPlayer.CAPABILITY_JUMP_FORWARD,
-        TrackPlayer.CAPABILITY_JUMP_BACKWARD,
-        TrackPlayer.CAPABILITY_STOP
-      ],
-      compactCapabilities: [
-        TrackPlayer.CAPABILITY_PLAY,
-        TrackPlayer.CAPABILITY_PAUSE,
-        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
-        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
-      ]
-    });
-    
-    TrackPlayer.addEventListener('playback-state', (args) => {
-      this.updatePlayState(args.state);
-    });
-    TrackPlayer.addEventListener('playback-error', (args) => {
-      this.log(args);
-    });
-
-    const urls = await this.GetAllFiles('/storage/emulated/0/Music');
-    const files = urls.map((url, index)=>({
-      url,
-      title: this.getTitle(url),
-      id: index
-    }));
-    if (!files){
-      files.push({
-        id: 0,
-        title: 'pure',
-        url: localTrack
-      });
-    }
-    this.setState({files});
-
-    this.skipToNext(true);
-
-    this.timerID = setInterval(
-      () => this.tick(),
-      100
-    );
-  }
-
-  componentDidMount() {
-    this.init();
-  }
-
-  async tick() {
-    if (this.state.playback !== TrackPlayer.STATE_PLAYING) return;
-    this.setState({
-      position: await TrackPlayer.getPosition()
-    });
   }
 
   render() {
