@@ -254,11 +254,7 @@ export default class App extends Component {
   jumpForwards = () => this.jumpTo(this.state.position + this.state.jumpStep);
 
   jumpBackwards = () => this.jumpTo(this.state.position - this.state.jumpStep);
-
-  togglePlay(){
-    this.state.playback === TrackPlayer.STATE_PLAYING ? TrackPlayer.pause() : TrackPlayer.play();
-  }
-
+  
   toggle = () => Controls.toggle();
 
   next = () => Controls.skipToNext();
