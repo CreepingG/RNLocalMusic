@@ -7,10 +7,8 @@ import {
   TouchableOpacity, TouchableWithoutFeedback, TouchableHighlight
 } from 'react-native';
 import TrackPlayer from "react-native-track-player"; //https://react-native-track-player.js.org/
-const RNFS = require('react-native-fs');
 import RNFileSelector from 'react-native-file-selector'; //https://github.com/prscX/react-native-file-selector
 import Controls from './controls';
-import localTrack from "./resources/pure.m4a";
 //#endregion
 
 export default class App extends Component {
@@ -23,7 +21,6 @@ export default class App extends Component {
       duration: 0,
       position: 0,
       jumpStep: 5,
-      files: [],
       curFile: {},
       playOrder: 2,
     };
@@ -52,6 +49,147 @@ export default class App extends Component {
     },
   })
 
+  componentDidMount() {
+    this.init();
+  }
+
+  async init(){
+    await TrackPlayer.setupPlayer({});
+    TrackPlayer.updateOptions({
+      stopWithApp: true,
+      capabilities: [
+        TrackPlayer.CAPABILITY_PLAY,
+        TrackPlayer.CAPABILITY_PAUSE,
+        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
+        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
+        TrackPlayer.CAPABILITY_JUMP_FORWARD,
+        TrackPlayer.CAPABILITY_JUMP_BACKWARD,
+        TrackPlayer.CAPABILITY_STOP
+      ],
+      compactCapabilities: [
+        TrackPlayer.CAPABILITY_PLAY,
+        TrackPlayer.CAPABILITY_PAUSE,
+        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
+        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
+      ]
+    });
+
+    TrackPlayer.addEventListener('playback-state', (args) => {
+      this.setState({playback: args.state});
+    });
+    TrackPlayer.addEventListener('playback-error', (args) => {
+      this.log(args);
+    });
+ 
+    Controls.getPosition = () => this.state.position;
+    Controls.getDuration = () => this.state.duration;
+    Controls.onStart = async file => {
+      this.setState({curFile: file});
+      this.setState({
+        duration: await TrackPlayer.getDuration(),
+        position: 0
+      });
+    };
+    //await Controls.load();
+    await Controls.skipToNext(true);
+
+    this.timerID = setInterval(
+      () => this.tick(),
+      100
+    );
+  }
+
+  async tick() {
+    if (this.state.playback !== TrackPlayer.STATE_PLAYING) return;
+    this.setState({
+      position: await TrackPlayer.getPosition()
+    });
+  }
+
+  log = obj => {
+    let msg = obj.constructor === String ? obj : JSON.stringify(obj);
+    this.setState({log: msg});
+    this.hint.show(msg, 2000);
+  }
+  //#endregion
+
+  //#region Control
+  async jumpTo(pos){
+    this.setState({position: await Controls.jumpTo(pos)})
+  }
+
+  jumpByRate = rate => this.jumpTo(this.state.duration * rate);
+
+  jumpForwards = () => this.jumpTo(this.state.position + this.state.jumpStep);
+
+  jumpBackwards = () => this.jumpTo(this.state.position - this.state.jumpStep);
+
+  toggle = () => Controls.toggle();
+
+  next = () => Controls.skipToNext();
+
+  previous = () => Controls.skipToPrevious() || this.log('已是第一首');
+  //#endregion
+  
+  //#region UI
+  getStateName(state) {
+    state = state || this.state.playback;
+    switch (state) {
+      case TrackPlayer.STATE_NONE:
+        return "未找到资源";
+      case TrackPlayer.STATE_PLAYING:
+        return "播放中";
+      case TrackPlayer.STATE_PAUSED:
+        return "已暂停";
+      case TrackPlayer.STATE_STOPPED:
+        return "已结束";
+      case TrackPlayer.STATE_BUFFERING:
+      case TrackPlayer.STATE_CONNECTING:
+        return "缓冲中";
+      case TrackPlayer.STATE_READY:
+        return "就绪";
+    }
+    return state.toString();
+  }
+
+  getToggleButtonIcon(){
+    switch (this.state.playback) {
+      case TrackPlayer.STATE_PLAYING:
+        return "┃┃";
+      case TrackPlayer.STATE_PAUSED:
+      case TrackPlayer.STATE_STOPPED:
+      case TrackPlayer.STATE_READY:
+        return "▶";
+    }
+    return ''; //☒
+  }
+
+  playOrder=[
+    ['↻', '顺序播放'],
+    ['₰', '随机播放'],
+    ['➀', '单曲循环']
+  ]
+
+  showPlayList(){
+    this.playList.show(Controls.list, Controls.current.id);
+  }
+
+  selectFile(){
+    RNFileSelector.Show({
+      title: '选择音乐文件',
+      //filter: '.*\.mp3$',
+      onDone: (url) => {
+        console.log(url);
+        if (Controls.list.some(file=>file.url===url)) return;
+        Controls.add(url);
+      },
+      onCancel: () => {
+        this.log('cancelled');
+      }
+    })
+  }
+  //#endregion
+  
   render() {
     return (
       <View style={{flex:1}}>
@@ -122,189 +260,13 @@ export default class App extends Component {
         <PlayList
           ref={ref => this.playList = ref}
           start={(index)=>Controls.start(index)}
-          list={this.state.files}
-          index={this.state.curFile.id}
         ></PlayList>
         <Hint ref={ref => this.hint = ref}></Hint>
         <Modal ref={ref => this.modal = ref}></Modal>
+        <MusicInfo  ref={ref => this.musicInfo = ref}></MusicInfo>
       </View>
     );
   }
-
-  componentDidMount() {
-    this.init();
-  }
-
-  async init(){
-    await TrackPlayer.setupPlayer({});
-    TrackPlayer.updateOptions({
-      stopWithApp: true,
-      capabilities: [
-        TrackPlayer.CAPABILITY_PLAY,
-        TrackPlayer.CAPABILITY_PAUSE,
-        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
-        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
-        TrackPlayer.CAPABILITY_JUMP_FORWARD,
-        TrackPlayer.CAPABILITY_JUMP_BACKWARD,
-        TrackPlayer.CAPABILITY_STOP
-      ],
-      compactCapabilities: [
-        TrackPlayer.CAPABILITY_PLAY,
-        TrackPlayer.CAPABILITY_PAUSE,
-        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
-        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
-      ]
-    });
-
-    TrackPlayer.addEventListener('playback-state', (args) => {
-      this.setState({playback: args.state});
-    });
-    TrackPlayer.addEventListener('playback-error', (args) => {
-      this.log(args);
-    });
-
-    const urls = await this.GetAllFiles('/storage/emulated/0/Music');
-    const files = urls.map((url, index)=>({
-      url,
-      title: this.getTitle(url),
-      id: index
-    }));
-    if (!files){
-      files.push({
-        id: 0,
-        title: 'pure',
-        url: localTrack
-      });
-    }
-
-    Controls.list = files;
-    Controls.getPosition = () => this.state.position;
-    Controls.getDuration = () => this.state.duration;
-    Controls.onStart = async file => {
-      this.setState({curFile: file});
-      this.setState({
-        duration: await TrackPlayer.getDuration(),
-        position: 0
-      });
-    };
-    Controls.skipToNext(true);
-
-    this.timerID = setInterval(
-      () => this.tick(),
-      100
-    );
-  }
-
-  async tick() {
-    if (this.state.playback !== TrackPlayer.STATE_PLAYING) return;
-    this.setState({
-      position: await TrackPlayer.getPosition()
-    });
-  }
-
-  log = obj => {
-    let msg = obj.constructor === String ? obj : JSON.stringify(obj);
-    this.setState({log: msg});
-    this.hint.show(msg, 2000);
-  }
-  //#endregion
-
-  //#region File
-  getTitle(url){
-    return url.match(/.*\/(.*)\.\w+$/)[1];
-  }
-
-  selectFile(){
-    RNFileSelector.Show({
-      title: '选择音乐文件',
-      //filter: '.*\.mp3$',
-      onDone: (url) => {
-        console.log(url);
-        const files = this.state.files;
-        if (files.some(file=>file.url===url)) return;
-        files.push({
-          url,
-          title: this.getTitle(url),
-          id: files.length
-        });
-      },
-      onCancel: () => {
-        this.log('cancelled');
-      }
-    })
-  }
-
-  async GetAllFiles(dir){
-    let items = await RNFS.readDir(dir);
-    let urls = items
-      .filter(item=>item.isFile())
-      .map(item=>item.path)
-      .filter(path=>['mp3','aac','wav'].includes((path.match(/\.(\w+)$/)||[])[1]));
-    return urls;
-  }
-  //#endregion
-
-  //#region Control
-  async jumpTo(pos){
-    this.setState({position: await Controls.jumpTo(pos)})
-  }
-
-  jumpByRate = rate => this.jumpTo(this.state.duration * rate);
-
-  jumpForwards = () => this.jumpTo(this.state.position + this.state.jumpStep);
-
-  jumpBackwards = () => this.jumpTo(this.state.position - this.state.jumpStep);
-  
-  toggle = () => Controls.toggle();
-
-  next = () => Controls.skipToNext();
-
-  previous = () => Controls.skipToPrevious() || this.log('已是第一首');
-  //#endregion
-  
-  //#region UI
-  getStateName(state) {
-    state = state || this.state.playback;
-    switch (state) {
-      case TrackPlayer.STATE_NONE:
-        return "未找到资源";
-      case TrackPlayer.STATE_PLAYING:
-        return "播放中";
-      case TrackPlayer.STATE_PAUSED:
-        return "已暂停";
-      case TrackPlayer.STATE_STOPPED:
-        return "已结束";
-      case TrackPlayer.STATE_BUFFERING:
-      case TrackPlayer.STATE_CONNECTING:
-        return "缓冲中";
-      case TrackPlayer.STATE_READY:
-        return "就绪";
-    }
-    return state.toString();
-  }
-
-  getToggleButtonIcon(){
-    switch (this.state.playback) {
-      case TrackPlayer.STATE_PLAYING:
-        return "┃┃";
-      case TrackPlayer.STATE_PAUSED:
-      case TrackPlayer.STATE_STOPPED:
-      case TrackPlayer.STATE_READY:
-        return "▶";
-    }
-    return ''; //☒
-  }
-
-  playOrder=[
-    ['↻', '顺序播放'],
-    ['₰', '随机播放'],
-    ['➀', '单曲循环']
-  ]
-
-  showPlayList(){
-    this.playList.show(Controls.list, Controls.current.id);
-  }
-  //#endregion
 }
 
 //#region Components
@@ -365,8 +327,8 @@ class ProgressBar extends Component{
         </Text>
         <Pressable style={this.styles.barContainer} onPressOut={this.onPressOut}>
           <View style={this.styles.bar}  onLayout={this.onLayout}>
-            <View style={Object.assign({flex: duration > 0 ? position : 0}, this.styles.barFront)}/>
-            <View style={Object.assign({flex: Math.max(duration - position, 1)}, this.styles.barBack)}/>
+            <View style={{flex: duration > 0 ? position : 0, ...this.styles.barFront}}/>
+            <View style={{flex: Math.max(duration - position, 1), ...this.styles.barBack}}/>
           </View>
         </Pressable>
         <Text style={this.styles.text}>
@@ -387,9 +349,10 @@ class Pressable extends Component{
   render() {
     let {style, onPressOut} = this.props;
     return (
-      <View style={Object.assign({
+      <View style={{
         position:'relative',
-      }, style)}>
+        ...style
+      }}>
         {this.props.children}
         <View
           style={{
@@ -435,12 +398,13 @@ function ControlButton({ title, onPress, color, textStyle }) {
       minWidth: 45,
       alignItems: 'center'
     }} onPress={onPress}>
-      <Text style={Object.assign({
+      <Text style={{
         color: '#fff',
         fontSize: 25,
         minWidth: 25,
-        textAlign: 'center'
-      }, textStyle)}>{title}</Text>
+        textAlign: 'center',
+        ...textStyle
+      }}>{title}</Text>
     </TouchableOpacity>
   );
 }
@@ -608,6 +572,10 @@ class PlayList extends Component{
     return nextState.show !== this.state.show;
   }
 
+  listEmptyComponent = (
+    <Text style={{textAlign:'center'}}>列表为空</Text>
+  )
+
   render() {
     const {list, index} = this;
     const play = (index)=>{
@@ -642,6 +610,7 @@ class PlayList extends Component{
               index
             })}
             initialScrollIndex={Math.max(0, index-1)}
+            ListEmptyComponent={this.listEmptyComponent}
           />
         </View>
       </View>
@@ -653,7 +622,7 @@ class MusicInfo extends Component{
   constructor(props) {
     super(props)
     this.state = {
-      show: false,
+      show: false
     }
   }
 
@@ -665,13 +634,12 @@ class MusicInfo extends Component{
       zIndex: 8,
       top: 0,
       left: 0,
-      backgroundColor: 'rgba(0,0,0,0.5)'
-    },
-    blankArea: {
-      flex:1
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     visualArea: {
-      height: '60%',
+      height: '80%',
       margin: 20,
       padding: 20,
       borderRadius: 10,
@@ -688,16 +656,21 @@ class MusicInfo extends Component{
     },
   });
 
-  show(){
+  params = [
+    ['duration', '时长', 0],
+    ['title', '标题'],
+    ['weight', '随机权重', 10],
+    ['volume', '音量', 0.8]
+  ]
+
+  show(file){
     this.setState({show: true});
+    this.list = [];
+
   }
 
   hide(){
     this.setState({show: false});
-  }
-
-  shouldComponentUpdate(nextProps, nextState){
-    return nextState.show !== this.state.show;
   }
 
   render() {
@@ -712,16 +685,13 @@ class MusicInfo extends Component{
         underlayColor='#eee'
         onPress={()=>play(file.id)}
       >
-        <Text style={Object.assign({color: file.id === index ? '#f33': '#000'}, this.styles.buttonTitle)}>
+        <Text style={{color: file.id === index ? '#f33': '#000', ...this.styles.buttonTitle}}>
           {file.title}
         </Text>
       </TouchableHighlight>
     );
     return this.state.show && (
       <View style={this.styles.container}>
-        <TouchableWithoutFeedback onPress={()=>this.hide()}>
-          <View style={this.styles.blankArea}></View>
-        </TouchableWithoutFeedback>
         <View style={this.styles.visualArea} >
           <FlatList
             data={list}
