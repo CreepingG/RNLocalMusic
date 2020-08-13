@@ -13,19 +13,19 @@ import Controls from './controls';
 module.exports = async function() {
 
   TrackPlayer.addEventListener('remote-play', () => {
-    Controls.play();
+    TrackPlayer.play();
   })
 
   TrackPlayer.addEventListener('remote-pause', () => {
-    Controls.pause();
+    TrackPlayer.pause();
   });
 
   TrackPlayer.addEventListener('remote-next', () => {
-    Controls.next()
+    Controls.skipToNext()
   });
 
   TrackPlayer.addEventListener('remote-previous', () => {
-    Controls.previous()
+    Controls.skipToPrevious()
   });
 
 };

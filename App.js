@@ -26,7 +26,6 @@ export default class App extends Component {
       files: [],
       curFile: {},
       playOrder: 2,
-      history: new HistoryList(),
     };
   }
 
@@ -62,30 +61,30 @@ export default class App extends Component {
           <ProgressBar
             position={this.state.position}
             duration={this.state.duration}
-            jump={(scale)=>this.jumpTo(this.state.duration * scale)}
-            log={(msg)=>this.log(msg)}
+            jump={this.jumpByRate}
+            log={this.log}
           ></ProgressBar>
 
           <View style={this.styles.control}>
             <ControlButton
               title={"I◀"} textStyle={{letterSpacing: -3}}
-              onPress={this.skipToPrevious.bind(this, false)}
+              onPress={this.previous}
             />
             <ControlButton 
               title={"«"} textStyle={{fontWeight: 'bold'}} 
-              onPress={()=>this.jumpTo(this.state.position - this.state.jumpStep)}
+              onPress={this.jumpBackwards}
             />
             <ControlButton 
               title={this.getToggleButtonIcon()} textStyle={{letterSpacing: -10}}
-              onPress={this.togglePlay.bind(this)} 
+              onPress={this.toggle} 
             />
             <ControlButton 
               title={"»"} textStyle={{fontWeight: 'bold'}}
-              onPress={()=>this.jumpTo(this.state.position + this.state.jumpStep)}
+              onPress={this.jumpForwards}
             />
             <ControlButton 
               title={"▶I"} textStyle={{letterSpacing: -3}} 
-              onPress={this.skipToNext.bind(this, false)}
+              onPress={this.next}
             />
           </View>
         </View>
@@ -122,7 +121,7 @@ export default class App extends Component {
 
         <PlayList
           ref={ref => this.playList = ref}
-          start={(index)=>this.start(this.state.files[index])}
+          start={(index)=>Controls.start(index)}
           list={this.state.files}
           index={this.state.curFile.id}
         ></PlayList>
@@ -156,16 +155,13 @@ export default class App extends Component {
         TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
       ]
     });
-    
+
     TrackPlayer.addEventListener('playback-state', (args) => {
       this.setState({playback: args.state});
     });
     TrackPlayer.addEventListener('playback-error', (args) => {
       this.log(args);
     });
-
-    Controls.next = () => this.skipToNext();
-    Controls.previous = () => this.skipToPrevious();
 
     const urls = await this.GetAllFiles('/storage/emulated/0/Music');
     const files = urls.map((url, index)=>({
@@ -180,9 +176,18 @@ export default class App extends Component {
         url: localTrack
       });
     }
-    this.setState({files});
 
-    this.skipToNext(true);
+    Controls.list = files;
+    Controls.getPosition = () => this.state.position;
+    Controls.getDuration = () => this.state.duration;
+    Controls.onStart = async file => {
+      this.setState({curFile: file});
+      this.setState({
+        duration: await TrackPlayer.getDuration(),
+        position: 0
+      });
+    };
+    Controls.skipToNext(true);
 
     this.timerID = setInterval(
       () => this.tick(),
@@ -197,7 +202,7 @@ export default class App extends Component {
     });
   }
 
-  log(obj){
+  log = obj => {
     let msg = obj.constructor === String ? obj : JSON.stringify(obj);
     this.setState({log: msg});
     this.hint.show(msg, 2000);
@@ -240,74 +245,25 @@ export default class App extends Component {
   //#endregion
 
   //#region Control
+  async jumpTo(pos){
+    this.setState({position: await Controls.jumpTo(pos)})
+  }
+
+  jumpByRate = rate => this.jumpTo(this.state.duration * rate);
+
+  jumpForwards = () => this.jumpTo(this.state.position + this.state.jumpStep);
+
+  jumpBackwards = () => this.jumpTo(this.state.position - this.state.jumpStep);
+
   togglePlay(){
     this.state.playback === TrackPlayer.STATE_PLAYING ? TrackPlayer.pause() : TrackPlayer.play();
   }
 
-  async skip(forward) {
-    try {
-      await forward ? TrackPlayer.skipToNext() : TrackPlayer.skipToPrevious();
-    } catch (err) {
-      this.log(err.toString());
-    }
-  }
+  toggle = () => Controls.toggle();
 
-  async start(file, pause){
-    this.setState({curFile: file});
-    let prev = await TrackPlayer.getCurrentTrack();
-    await TrackPlayer.add(file);
-    await TrackPlayer.skipToNext();
-    if (prev) {
-      await TrackPlayer.remove(prev);
-    }
-    this.setState({
-      duration: await TrackPlayer.getDuration(),
-      position: 0
-    });
-    pause || await TrackPlayer.play();
-  }
+  next = () => Controls.skipToNext();
 
-  random(range){
-    return Math.floor(Math.random() * range);
-  }
-
-  async skipToNext(pause){
-    let history = this.state.history;
-    let file = history.Next();
-    if (file){
-      await this.start(file, pause);
-    }
-    else{
-      let files = this.state.files;
-      let index = Math.floor(Math.random() * files.length);
-      let file = files[index];
-      history.Add(file);
-      await this.start(file, pause);
-    }
-  }
-
-  async skipToPrevious(pause){
-    let history = this.state.history;
-    let file = history.Previous();
-    if (file){
-      await this.start(file, pause);
-    }
-    else{
-      this.log('已是第一首');
-    }
-  }
-
-  async jumpTo(seconds){
-    try{
-      if (this.state.duration > 0) seconds = Math.max(0, Math.min(this.state.duration, seconds));
-      if (seconds === this.state.position) return;
-      await TrackPlayer.seekTo(seconds);
-      //await TrackPlayer.play();
-      this.setState({position: await TrackPlayer.getPosition()});
-    } catch(err){
-      this.log(err.toString());
-    }
-  }
+  previous = () => Controls.skipToPrevious() || this.log('已是第一首');
   //#endregion
   
   //#region UI
@@ -350,42 +306,9 @@ export default class App extends Component {
   ]
 
   showPlayList(){
-    this.playList.show(this.state.files, 0);
+    this.playList.show(Controls.list, Controls.current.id);
   }
   //#endregion
-}
-
-class HistoryList extends Array {
-  index = -1;
-
-  Add(item){
-    this.index += 1;
-    this[this.index] = item;
-  }
-
-  Cur(){
-    return this[this.index];
-  }
-
-  Next(){
-    if (this.length <= this.index + 1){
-      return null;
-    }
-    else{
-      this.index += 1;
-      return this[this.index];
-    }
-  }
-
-  Previous(){
-    if(this.index < 1){
-      return null;
-    }
-    else{
-      this.index -= 1;
-      return this[this.index];
-    }
-  }
 }
 
 //#region Components
@@ -637,6 +560,100 @@ class Hint extends Component{
 }
 
 class PlayList extends Component{
+  constructor(props) {
+    super(props)
+    this.state = {
+      show: false,
+    }
+  }
+
+  styles = StyleSheet.create({
+    container: {
+      width: '100%',
+      height: '100%',
+      position: 'absolute',
+      zIndex: 8,
+      top: 0,
+      left: 0,
+      backgroundColor: 'rgba(0,0,0,0.5)'
+    },
+    blankArea: {
+      flex:1
+    },
+    visualArea: {
+      height: '60%',
+      margin: 20,
+      padding: 20,
+      borderRadius: 10,
+      backgroundColor: '#fff'
+    },
+    button: {
+      flex: 1,
+      height: 50
+    },
+    buttonTitle: {
+      textAlignVertical: 'center',
+      fontSize: 16,
+      flex: 1,
+    },
+  });
+
+  show(list, index){
+    this.setState({show: true});
+    this.list = list;
+    this.index = index;
+  }
+
+  hide(){
+    this.setState({show: false});
+  }
+
+  shouldComponentUpdate(nextProps, nextState){
+    return nextState.show !== this.state.show;
+  }
+
+  render() {
+    const {list, index} = this;
+    const play = (index)=>{
+      this.props.start(index);
+      this.hide();
+    }
+    const renderItem = ({item: file}) => (
+      <TouchableHighlight
+        style={this.styles.button}
+        underlayColor='#eee'
+        onPress={()=>play(file.id)}
+      >
+        <Text style={Object.assign({color: file.id === index ? '#f33': '#000'}, this.styles.buttonTitle)}>
+          {file.title}
+        </Text>
+      </TouchableHighlight>
+    );
+    return this.state.show && (
+      <View style={this.styles.container}>
+        <TouchableWithoutFeedback onPress={()=>this.hide()}>
+          <View style={this.styles.blankArea}></View>
+        </TouchableWithoutFeedback>
+        <View style={this.styles.visualArea} >
+          <FlatList
+            data={list}
+            renderItem={renderItem}
+            keyExtractor={file => file.id.toString()}
+            extraData={index}
+            getItemLayout={(data, index)=>({
+              length: 50,
+              offset: 50 * index,
+              index
+            })}
+            initialScrollIndex={Math.max(0, index-1)}
+          />
+        </View>
+      </View>
+    )
+  }
+}
+
+class MusicInfo extends Component{
   constructor(props) {
     super(props)
     this.state = {
