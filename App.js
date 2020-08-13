@@ -1,5 +1,10 @@
 import React, { Component } from 'react';
-import { StyleSheet, View, ScrollView, FlatList, Text, TouchableOpacity, TouchableWithoutFeedback, TouchableHighlight } from 'react-native';
+import { 
+  StyleSheet, 
+  View, Text, 
+  ScrollView, FlatList, 
+  TouchableOpacity, TouchableWithoutFeedback, TouchableHighlight
+} from 'react-native';
 import RNFileSelector from 'react-native-file-selector'; //https://github.com/prscX/react-native-file-selector
 import TrackPlayer from "react-native-track-player"; //https://react-native-track-player.js.org/
 import localTrack from "./resources/pure.m4a";
