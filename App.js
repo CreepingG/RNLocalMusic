@@ -1,3 +1,4 @@
+//#region import
 import React, { Component } from 'react';
 import { 
   StyleSheet, 
@@ -10,8 +11,10 @@ const RNFS = require('react-native-fs');
 import RNFileSelector from 'react-native-file-selector'; //https://github.com/prscX/react-native-file-selector
 import Controls from './controls';
 import localTrack from "./resources/pure.m4a";
+//#endregion
 
 export default class App extends Component {
+  //#region Base
   constructor(props) {
     super(props);
     this.state = {
@@ -48,226 +51,7 @@ export default class App extends Component {
     footer: {
       flexDirection: 'row',
     },
-  });
-
-  componentDidMount() {
-    this.init();
-  }
-
-  async init(){
-    await TrackPlayer.setupPlayer({});
-    TrackPlayer.updateOptions({
-      stopWithApp: true,
-      capabilities: [
-        TrackPlayer.CAPABILITY_PLAY,
-        TrackPlayer.CAPABILITY_PAUSE,
-        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
-        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
-        TrackPlayer.CAPABILITY_JUMP_FORWARD,
-        TrackPlayer.CAPABILITY_JUMP_BACKWARD,
-        TrackPlayer.CAPABILITY_STOP
-      ],
-      compactCapabilities: [
-        TrackPlayer.CAPABILITY_PLAY,
-        TrackPlayer.CAPABILITY_PAUSE,
-        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
-        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
-      ]
-    });
-    
-    TrackPlayer.addEventListener('playback-state', (args) => {
-      this.updatePlayState(args.state);
-    });
-    TrackPlayer.addEventListener('playback-error', (args) => {
-      this.log(args);
-    });
-
-    Controls.next = () => this.skipToNext();
-    Controls.previous = () => this.skipToPrevious();
-
-    const urls = await this.GetAllFiles('/storage/emulated/0/Music');
-    const files = urls.map((url, index)=>({
-      url,
-      title: this.getTitle(url),
-      id: index
-    }));
-    if (!files){
-      files.push({
-        id: 0,
-        title: 'pure',
-        url: localTrack
-      });
-    }
-    this.setState({files});
-
-    this.skipToNext(true);
-
-    this.timerID = setInterval(
-      () => this.tick(),
-      100
-    );
-  }
-
-  async tick() {
-    if (this.state.playback !== TrackPlayer.STATE_PLAYING) return;
-    this.setState({
-      position: await TrackPlayer.getPosition()
-    });
-  }
-
-  getTitle(url){
-    return url.match(/.*\/(.*)\.\w+$/)[1];
-  }
-
-  selectFile(){
-    RNFileSelector.Show({
-      title: '选择音乐文件',
-      //filter: '.*\.mp3$',
-      onDone: (url) => {
-        console.log(url);
-        const files = this.state.files;
-        if (files.some(file=>file.url===url)) return;
-        files.push({
-          url,
-          title: this.getTitle(url),
-          id: files.length
-        });
-      },
-      onCancel: () => {
-        this.log('cancelled');
-      }
-    })
-  };
-
-  togglePlay(){
-    this.state.playback === TrackPlayer.STATE_PLAYING ? TrackPlayer.pause() : TrackPlayer.play();
-  }
-
-  async skip(forward) {
-    try {
-      await forward ? TrackPlayer.skipToNext() : TrackPlayer.skipToPrevious();
-    } catch (err) {
-      this.log(err.toString());
-    }
-  }
-
-  async start(file, pause){
-    this.setState({curFile: file});
-    let prev = await TrackPlayer.getCurrentTrack();
-    await TrackPlayer.add(file);
-    await TrackPlayer.skipToNext();
-    if (prev) {
-      await TrackPlayer.remove(prev);
-    }
-    this.setState({
-      duration: await TrackPlayer.getDuration(),
-      position: 0
-    });
-    pause || await TrackPlayer.play();
-  }
-
-  random(range){
-    return Math.floor(Math.random() * range);
-  }
-
-  async skipToNext(pause){
-    let history = this.state.history;
-    let file = history.Next();
-    if (file){
-      await this.start(file, pause);
-    }
-    else{
-      let files = this.state.files;
-      let index = Math.floor(Math.random() * files.length);
-      let file = files[index];
-      history.Add(file);
-      await this.start(file, pause);
-    }
-  }
-
-  async skipToPrevious(pause){
-    let history = this.state.history;
-    let file = history.Previous();
-    if (file){
-      await this.start(file, pause);
-    }
-    else{
-      this.log('已是第一首');
-    }
-  }
-
-  async jumpTo(seconds){
-    try{
-      if (this.state.duration > 0) seconds = Math.max(0, Math.min(this.state.duration, seconds));
-      if (seconds === this.state.position) return;
-      await TrackPlayer.seekTo(seconds);
-      //await TrackPlayer.play();
-      this.setState({position: await TrackPlayer.getPosition()});
-    } catch(err){
-      this.log(err.toString());
-    }
-  }
-
-  updatePlayState(state){
-    this.setState({playback: state});
-  }
-
-  getStateName(state) {
-    state = state || this.state.playback;
-    switch (state) {
-      case TrackPlayer.STATE_NONE:
-        return "未找到资源";
-      case TrackPlayer.STATE_PLAYING:
-        return "播放中";
-      case TrackPlayer.STATE_PAUSED:
-        return "已暂停";
-      case TrackPlayer.STATE_STOPPED:
-        return "已结束";
-      case TrackPlayer.STATE_BUFFERING:
-      case TrackPlayer.STATE_CONNECTING:
-        return "缓冲中";
-      case TrackPlayer.STATE_READY:
-        return "就绪";
-    }
-    return state.toString();
-  }
-
-  getToggleButtonIcon(){
-    switch (this.state.playback) {
-      case TrackPlayer.STATE_PLAYING:
-        return "┃┃";
-      case TrackPlayer.STATE_PAUSED:
-      case TrackPlayer.STATE_STOPPED:
-      case TrackPlayer.STATE_READY:
-        return "▶";
-    }
-    return ''; //☒
-  }
-
-  playOrder=[
-    ['↻', '顺序播放'],
-    ['₰', '随机播放'],
-    ['➀', '单曲循环']
-  ]
-
-  log(obj){
-    let msg = obj.constructor === String ? obj : JSON.stringify(obj);
-    this.setState({log: msg});
-    this.hint.show(msg, 2000);
-  }
-
-  async GetAllFiles(dir){
-    let items = await RNFS.readDir(dir);
-    let urls = items
-      .filter(item=>item.isFile())
-      .map(item=>item.path)
-      .filter(path=>['mp3','aac','wav'].includes((path.match(/\.(\w+)$/)||[])[1]));
-    return urls;
-  }
-
-  showPlayList(){
-    this.playList.show(this.state.files, 0);
-  }
+  })
 
   render() {
     return (
@@ -346,7 +130,229 @@ export default class App extends Component {
         <Modal ref={ref => this.modal = ref}></Modal>
       </View>
     );
-  };
+  }
+
+  componentDidMount() {
+    this.init();
+  }
+
+  async init(){
+    await TrackPlayer.setupPlayer({});
+    TrackPlayer.updateOptions({
+      stopWithApp: true,
+      capabilities: [
+        TrackPlayer.CAPABILITY_PLAY,
+        TrackPlayer.CAPABILITY_PAUSE,
+        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
+        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
+        TrackPlayer.CAPABILITY_JUMP_FORWARD,
+        TrackPlayer.CAPABILITY_JUMP_BACKWARD,
+        TrackPlayer.CAPABILITY_STOP
+      ],
+      compactCapabilities: [
+        TrackPlayer.CAPABILITY_PLAY,
+        TrackPlayer.CAPABILITY_PAUSE,
+        TrackPlayer.CAPABILITY_SKIP_TO_NEXT,
+        TrackPlayer.CAPABILITY_SKIP_TO_PREVIOUS,
+      ]
+    });
+    
+    TrackPlayer.addEventListener('playback-state', (args) => {
+      this.setState({playback: args.state});
+    });
+    TrackPlayer.addEventListener('playback-error', (args) => {
+      this.log(args);
+    });
+
+    Controls.next = () => this.skipToNext();
+    Controls.previous = () => this.skipToPrevious();
+
+    const urls = await this.GetAllFiles('/storage/emulated/0/Music');
+    const files = urls.map((url, index)=>({
+      url,
+      title: this.getTitle(url),
+      id: index
+    }));
+    if (!files){
+      files.push({
+        id: 0,
+        title: 'pure',
+        url: localTrack
+      });
+    }
+    this.setState({files});
+
+    this.skipToNext(true);
+
+    this.timerID = setInterval(
+      () => this.tick(),
+      100
+    );
+  }
+
+  async tick() {
+    if (this.state.playback !== TrackPlayer.STATE_PLAYING) return;
+    this.setState({
+      position: await TrackPlayer.getPosition()
+    });
+  }
+
+  log(obj){
+    let msg = obj.constructor === String ? obj : JSON.stringify(obj);
+    this.setState({log: msg});
+    this.hint.show(msg, 2000);
+  }
+  //#endregion
+
+  //#region File
+  getTitle(url){
+    return url.match(/.*\/(.*)\.\w+$/)[1];
+  }
+
+  selectFile(){
+    RNFileSelector.Show({
+      title: '选择音乐文件',
+      //filter: '.*\.mp3$',
+      onDone: (url) => {
+        console.log(url);
+        const files = this.state.files;
+        if (files.some(file=>file.url===url)) return;
+        files.push({
+          url,
+          title: this.getTitle(url),
+          id: files.length
+        });
+      },
+      onCancel: () => {
+        this.log('cancelled');
+      }
+    })
+  }
+
+  async GetAllFiles(dir){
+    let items = await RNFS.readDir(dir);
+    let urls = items
+      .filter(item=>item.isFile())
+      .map(item=>item.path)
+      .filter(path=>['mp3','aac','wav'].includes((path.match(/\.(\w+)$/)||[])[1]));
+    return urls;
+  }
+  //#endregion
+
+  //#region Control
+  togglePlay(){
+    this.state.playback === TrackPlayer.STATE_PLAYING ? TrackPlayer.pause() : TrackPlayer.play();
+  }
+
+  async skip(forward) {
+    try {
+      await forward ? TrackPlayer.skipToNext() : TrackPlayer.skipToPrevious();
+    } catch (err) {
+      this.log(err.toString());
+    }
+  }
+
+  async start(file, pause){
+    this.setState({curFile: file});
+    let prev = await TrackPlayer.getCurrentTrack();
+    await TrackPlayer.add(file);
+    await TrackPlayer.skipToNext();
+    if (prev) {
+      await TrackPlayer.remove(prev);
+    }
+    this.setState({
+      duration: await TrackPlayer.getDuration(),
+      position: 0
+    });
+    pause || await TrackPlayer.play();
+  }
+
+  random(range){
+    return Math.floor(Math.random() * range);
+  }
+
+  async skipToNext(pause){
+    let history = this.state.history;
+    let file = history.Next();
+    if (file){
+      await this.start(file, pause);
+    }
+    else{
+      let files = this.state.files;
+      let index = Math.floor(Math.random() * files.length);
+      let file = files[index];
+      history.Add(file);
+      await this.start(file, pause);
+    }
+  }
+
+  async skipToPrevious(pause){
+    let history = this.state.history;
+    let file = history.Previous();
+    if (file){
+      await this.start(file, pause);
+    }
+    else{
+      this.log('已是第一首');
+    }
+  }
+
+  async jumpTo(seconds){
+    try{
+      if (this.state.duration > 0) seconds = Math.max(0, Math.min(this.state.duration, seconds));
+      if (seconds === this.state.position) return;
+      await TrackPlayer.seekTo(seconds);
+      //await TrackPlayer.play();
+      this.setState({position: await TrackPlayer.getPosition()});
+    } catch(err){
+      this.log(err.toString());
+    }
+  }
+  //#endregion
+  
+  //#region UI
+  getStateName(state) {
+    state = state || this.state.playback;
+    switch (state) {
+      case TrackPlayer.STATE_NONE:
+        return "未找到资源";
+      case TrackPlayer.STATE_PLAYING:
+        return "播放中";
+      case TrackPlayer.STATE_PAUSED:
+        return "已暂停";
+      case TrackPlayer.STATE_STOPPED:
+        return "已结束";
+      case TrackPlayer.STATE_BUFFERING:
+      case TrackPlayer.STATE_CONNECTING:
+        return "缓冲中";
+      case TrackPlayer.STATE_READY:
+        return "就绪";
+    }
+    return state.toString();
+  }
+
+  getToggleButtonIcon(){
+    switch (this.state.playback) {
+      case TrackPlayer.STATE_PLAYING:
+        return "┃┃";
+      case TrackPlayer.STATE_PAUSED:
+      case TrackPlayer.STATE_STOPPED:
+      case TrackPlayer.STATE_READY:
+        return "▶";
+    }
+    return ''; //☒
+  }
+
+  playOrder=[
+    ['↻', '顺序播放'],
+    ['₰', '随机播放'],
+    ['➀', '单曲循环']
+  ]
+
+  showPlayList(){
+    this.playList.show(this.state.files, 0);
+  }
+  //#endregion
 }
 
 class HistoryList extends Array {
@@ -382,6 +388,7 @@ class HistoryList extends Array {
   }
 }
 
+//#region Components
 class ProgressBar extends Component{
   constructor(props) {
     super(props)
@@ -720,5 +727,5 @@ class PlayList extends Component{
     )
   }
 }
-
+//#endregion
 
