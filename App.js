@@ -5,44 +5,11 @@ import {
   ScrollView, FlatList, 
   TouchableOpacity, TouchableWithoutFeedback, TouchableHighlight
 } from 'react-native';
-import RNFileSelector from 'react-native-file-selector'; //https://github.com/prscX/react-native-file-selector
 import TrackPlayer from "react-native-track-player"; //https://react-native-track-player.js.org/
-import localTrack from "./resources/pure.m4a";
 const RNFS = require('react-native-fs');
+import RNFileSelector from 'react-native-file-selector'; //https://github.com/prscX/react-native-file-selector
 import Controls from './controls';
-
-class HistoryList extends Array {
-  index = -1;
-
-  Add(item){
-    this.index += 1;
-    this[this.index] = item;
-  }
-
-  Cur(){
-    return this[this.index];
-  }
-
-  Next(){
-    if (this.length <= this.index + 1){
-      return null;
-    }
-    else{
-      this.index += 1;
-      return this[this.index];
-    }
-  }
-
-  Previous(){
-    if(this.index < 1){
-      return null;
-    }
-    else{
-      this.index -= 1;
-      return this[this.index];
-    }
-  }
-}
+import localTrack from "./resources/pure.m4a";
 
 export default class App extends Component {
   constructor(props) {
@@ -380,6 +347,39 @@ export default class App extends Component {
       </View>
     );
   };
+}
+
+class HistoryList extends Array {
+  index = -1;
+
+  Add(item){
+    this.index += 1;
+    this[this.index] = item;
+  }
+
+  Cur(){
+    return this[this.index];
+  }
+
+  Next(){
+    if (this.length <= this.index + 1){
+      return null;
+    }
+    else{
+      this.index += 1;
+      return this[this.index];
+    }
+  }
+
+  Previous(){
+    if(this.index < 1){
+      return null;
+    }
+    else{
+      this.index -= 1;
+      return this[this.index];
+    }
+  }
 }
 
 class ProgressBar extends Component{
