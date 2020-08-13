@@ -261,6 +261,13 @@ export default class App extends Component {
       title: this.getTitle(url),
       id: index
     }));
+    if (!files){
+      files.push({
+        id: 0,
+        title: 'pure',
+        url: localTrack
+      });
+    }
     this.setState({files});
 
     this.skipToNext(true);
