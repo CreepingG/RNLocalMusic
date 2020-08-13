@@ -9,12 +9,13 @@ import RNFileSelector from 'react-native-file-selector'; //https://github.com/pr
 import TrackPlayer from "react-native-track-player"; //https://react-native-track-player.js.org/
 import localTrack from "./resources/pure.m4a";
 const RNFS = require('react-native-fs');
+import Controls from './controls';
 
 class HistoryList extends Array {
   index = -1;
 
   Add(item){
-    this.index = this.index + 1;
+    this.index += 1;
     this[this.index] = item;
   }
 
@@ -28,7 +29,7 @@ class HistoryList extends Array {
     }
     else{
       this.index += 1;
-      return this[this.index + 1];
+      return this[this.index];
     }
   }
 
@@ -114,6 +115,9 @@ export default class App extends Component {
       this.log(args);
     });
 
+    Controls.next = () => this.skipToNext();
+    Controls.previous = () => this.skipToPrevious();
+
     const urls = await this.GetAllFiles('/storage/emulated/0/Music');
     const files = urls.map((url, index)=>({
       url,
@@ -182,8 +186,12 @@ export default class App extends Component {
 
   async start(file, pause){
     this.setState({curFile: file});
-    await TrackPlayer.reset();
+    let prev = await TrackPlayer.getCurrentTrack();
     await TrackPlayer.add(file);
+    await TrackPlayer.skipToNext();
+    if (prev) {
+      await TrackPlayer.remove(prev);
+    }
     this.setState({
       duration: await TrackPlayer.getDuration(),
       position: 0

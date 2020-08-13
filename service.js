@@ -8,27 +8,24 @@
  */
 
 import TrackPlayer from 'react-native-track-player';
+import Controls from './controls';
 
 module.exports = async function() {
 
   TrackPlayer.addEventListener('remote-play', () => {
-    TrackPlayer.play()
+    Controls.play();
   })
 
   TrackPlayer.addEventListener('remote-pause', () => {
-    TrackPlayer.pause()
+    Controls.pause();
   });
 
   TrackPlayer.addEventListener('remote-next', () => {
-    TrackPlayer.skipToNext()
+    Controls.next()
   });
 
   TrackPlayer.addEventListener('remote-previous', () => {
-    TrackPlayer.skipToPrevious()
-  });
-
-  TrackPlayer.addEventListener('remote-stop', () => {
-    TrackPlayer.destroy()
+    Controls.previous()
   });
 
 };
