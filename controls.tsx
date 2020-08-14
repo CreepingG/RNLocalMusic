@@ -3,13 +3,14 @@ import RNFS from 'react-native-fs';
 import localTrack from "./resources/pure.m4a";
 
 interface File{
-	id: number | string,
+	id: number,
 	url: string,
 	title: string,
 	volume: number,
 	weight: number,
 	startTime: number,
-	endTime: number
+	endTime: number,
+	duration?: number
 }
 
 const DefaultMusic: File = {
@@ -22,7 +23,7 @@ const DefaultMusic: File = {
 	endTime: 0
 }
 
-class HistoryList<T> extends Array {
+class HistoryList<T> extends Array<T> {
 	index:number = -1;
   
 	Add(item: T){
@@ -76,9 +77,13 @@ function MakeFile(url: string, id: number) : File{
 	}
 }
 
+enum LoopMode{
+	'noLoop', 'order', 'shuffle', 'single'
+}
+
 class PlayControl {
 	list: File[];
-	history: HistoryList<File>;
+	_history: HistoryList<File>;
 	onStart: (toPlay: File) => any;
 
 	getPosition = () => TrackPlayer.getPosition();
@@ -86,38 +91,69 @@ class PlayControl {
 
 	constructor() {
 		this.list = [];
-		this.history = new HistoryList();
-		console.log(1);
+		this._history = new HistoryList();
 	}
 
-	filePath = [RNFS.DocumentDirectoryPath + '/MusicLists/0.js', RNFS.DocumentDirectoryPath + '/MusicLists']
+	readonly _path = {
+		settings: RNFS.DocumentDirectoryPath + '/settings.json',
+		musicListsDir: RNFS.DocumentDirectoryPath + '/MusicLists',
+		getMusicList: () => {
+			let fileName = this.settings.listIndex + '.json';
+			return this._path.musicListsDir + '/' + fileName;
+		}
+	}
+
+	settings = {
+		loop: LoopMode.shuffle,
+		listsName: ['-'],
+		listIndex: 0,
+		musicIndex: 0,
+		musicPosition: 0,
+	}
 
 	async load(){
-		let exists = await RNFS.exists(this.filePath[0]);
-		if (exists){
-			const json = await RNFS.readFile(this.filePath[0]);
+		if (await RNFS.exists(this._path.settings)){
+			let obj = JSON.parse(await RNFS.readFile(this._path.settings));
+			for (let key of Object.keys(this.settings)){
+				if (key in obj){
+					this.settings[key] = obj[key];
+				}
+			}
+		}
+		
+		let filePath = this._path.getMusicList();
+		if (await RNFS.exists(filePath)){
+			const json = await RNFS.readFile(filePath);
 			this.list = JSON.parse(json);
 		}
 		else{
 			const urls = await GetAllFiles('/storage/emulated/0/Music');
 			this.list = urls.map(MakeFile);
-			await this.save();
+			await this.saveList();
 		}
+
+		let first = this.list[this.settings.musicIndex];
+		this.record(first);
+		await this.start(first, true, this.settings.musicPosition);
+
+		setInterval(async ()=>{
+			await RNFS.writeFile(this._path.settings, JSON.stringify(this.settings));
+		}, 1000);
 	}
 
-	async save(){
-		await RNFS.mkdir(this.filePath[1]);
-		await RNFS.writeFile(this.filePath[0], JSON.stringify(this.list));
+	async saveList(){
+		await RNFS.mkdir(this._path.musicListsDir);
+		await RNFS.writeFile(this._path.getMusicList(), JSON.stringify(this.list));
 	}
 
 	add(url: string){
 		this.list.push(MakeFile(url, this.list.length));
-		this.save();
+		this.saveList();
 	}
 
 	get current(): File{
-		return this.history.Cur() || {
-			id: 0,
+		return this._history.Cur() || {
+			id: -1,
 			title: '',
 			url: '',
 			volume: 0,
@@ -132,9 +168,13 @@ class PlayControl {
 		return state === TrackPlayer.STATE_PLAYING ? TrackPlayer.pause() : TrackPlayer.play();
 	}
 
-	async start(file: number | File | undefined, pause: boolean) {
-		if (typeof file === 'number') file = this.list[file];
+	record(file: File){
+		this._history.Add(file);
+	}
+
+	async start(file: File | undefined, pause: boolean, position: number = 0) {
 		if (!file) file = DefaultMusic;
+		this.settings.musicIndex = file.id;
 		let prev = await TrackPlayer.getCurrentTrack();
 		await TrackPlayer.add({
 			id: file.id.toString(),
@@ -146,31 +186,65 @@ class PlayControl {
 			await TrackPlayer.skipToNext();
 			await TrackPlayer.remove(prev);
 		}
+		if (position > 0){
+			TrackPlayer.seekTo(position);
+		}
+		else if(file.startTime > 0){
+			TrackPlayer.seekTo(file.startTime);
+		}
 		pause || await TrackPlayer.play();
 		await TrackPlayer.setVolume(file.volume || 0.8);
-		this.onStart && this.onStart(file);
+		await (this.onStart && this.onStart(file));
 	}
 
-	random(range: number) {
-		return Math.floor(Math.random() * range);
+	randomNext(){
+		let ranges = [];
+		let sum = 0;
+		this.list.forEach(file=>{
+			sum += file.weight;
+			ranges.push(sum);
+		});
+		let rand = Math.random() * sum;
+		let result = this.list[0];
+		for(let index in ranges){
+			if (rand < ranges[index]){
+				result = this.list[index];
+				break;
+			}
+		}
+		return result;
 	}
 
-	async skipToNext(pause?: boolean): Promise<File> {
-		let file = this.history.Next();
+	async skipToNext(pause?: boolean): Promise<File | void> {
+		let file = this._history.Next();
 		if (file) {
 			await this.start(file, pause);
 			return file;
 		} else {
-			let index = Math.floor(Math.random() * this.list.length);
-			let file = this.list[index];
-			this.history.Add(file);
+			switch(this.settings.loop){
+				case LoopMode.noLoop:
+					TrackPlayer.pause();
+					return;
+				case LoopMode.single:
+					file = this.current;
+					break;
+				case LoopMode.order:
+					let index = this.current.id;
+					index = (index + 1) % this.list.length;
+					file = this.list[index];
+					break;
+				case LoopMode.shuffle:
+					file = this.randomNext();
+					break;
+			}
+			this._history.Add(file);
 			await this.start(file, pause);
 			return file;
 		}
 	}
 
 	async skipToPrevious(pause?: boolean): Promise<File | void> {
-		let file = this.history.Previous();
+		let file = this._history.Previous();
 		if (file) {
 			await this.start(file, pause);
 			return file;
@@ -182,7 +256,6 @@ class PlayControl {
 	async jumpTo(seconds: number): Promise<number> {
 		let duration = await this.getDuration();
 		let position = await this.getPosition();
-		console.log(seconds);
 		if (duration > 0) seconds = Math.max(0, Math.min(duration, seconds));
 		if (seconds === position) return seconds;
 		await TrackPlayer.seekTo(seconds);

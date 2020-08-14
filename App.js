@@ -10,6 +10,7 @@ import {
 import TrackPlayer from "react-native-track-player"; //https://react-native-track-player.js.org/
 import RNFileSelector from 'react-native-file-selector'; //https://github.com/prscX/react-native-file-selector
 import Controls from './controls';
+import controls from './controls';
 //#endregion
 
 export default class App extends Component {
@@ -23,7 +24,7 @@ export default class App extends Component {
       position: 0,
       jumpStep: 5,
       title: '',
-      playOrder: 2,
+      loopMode: 3,
     };
   }
 
@@ -86,25 +87,46 @@ export default class App extends Component {
     Controls.getDuration = () => this.state.duration;
     Controls.onStart = async file => {
       this.setState({title: file.title});
+      let duration = file.duration || await TrackPlayer.getDuration();
       this.setState({
-        duration: await TrackPlayer.getDuration(),
-        position: 0
+        duration,
+        position: await TrackPlayer.getPosition()
       });
+      if (duration === 0){
+        setTimeout(() => {
+          TrackPlayer.getDuration().then(duration => this.setState({duration}));
+        }, 100);
+      }
     };
     await Controls.load();
-    await Controls.skipToNext(true);
+    this.setState({loopMode: Controls.settings.loop});
+    TrackPlayer.addEventListener('playback-queue-ended', ({track, position}) => {
+      let file = Controls.current;
+      if (!'duration' in file){
+        file.duration = position;
+      }
+      Controls.skipToNext();
+    });
 
     this.timerID = setInterval(
       () => this.tick(),
       100
     );
   }
-
+  
   async tick() {
     if (this.state.playback !== TrackPlayer.STATE_PLAYING) return;
-    this.setState({
-      position: await TrackPlayer.getPosition()
-    });
+    let position = await TrackPlayer.getPosition();
+    controls.settings.musicPosition = position;
+    let endTime = Controls.current.endTime;
+    if (endTime > 0 && position >= endTime){
+      Controls.skipToNext();
+    }
+    else{
+      this.setState({
+        position
+      });
+    }
   }
 
   log = obj => {
@@ -165,7 +187,8 @@ export default class App extends Component {
     return ''; //☒
   }
 
-  playOrder=[
+  loopMode=[
+    ['▣', '播完即止'],
     ['↻', '顺序播放'],
     ['₰', '随机播放'],
     ['➀', '单曲循环']
@@ -232,11 +255,12 @@ export default class App extends Component {
         <View style={this.styles.footer}>
           <FooterButton
             onPress={()=>{
-              const newOrder = (this.state.playOrder + 1) % 3;
-              this.setState({playOrder: newOrder});
-              this.log(this.playOrder[newOrder][1])
+              const newMode = (this.state.loopMode + 1) % 4;
+              this.setState({loopMode: newMode});
+              Controls.settings.loop = newMode;
+              this.log(this.loopMode[newMode][1])
             }}
-            title={this.playOrder[this.state.playOrder][0]}
+            title={this.loopMode[this.state.loopMode][0]}
             color="#3a3"
           />
           <FooterButton
@@ -267,13 +291,20 @@ export default class App extends Component {
 
         <PlayList
           ref={ref => this.playList = ref}
-          start={(index)=>Controls.start(index)}
+          start={(index)=>{
+            let file = Controls.list[index];
+            Controls.record(file);
+            Controls.start(file);
+          }}
         ></PlayList>
         <Hint ref={ref => this.hint = ref}></Hint>
         <Modal ref={ref => this.modal = ref}></Modal>
         <MusicConfig 
           ref={ref => this.musicConfig = ref}
-          onSubmit={() => this.setState({title: Controls.current.title})}
+          onSubmit={() => {
+            this.setState({title: Controls.current.title});
+            controls.saveList();
+          }}
         ></MusicConfig>
       </View>
     );
@@ -290,9 +321,7 @@ function FormatTime(seconds){
 
 function ParseTime(text){
   try{
-    console.log(text);
     let [_, min, sec] = text.match(/(\d+):(\d\d(\.\d+)?)/);
-    console.log(min, sec);
     return ToNumber(min) * 60 + ToNumber(sec);
   }
   catch{
@@ -617,7 +646,7 @@ class PlayList extends Component{
         underlayColor='#eee'
         onPress={()=>play(file.id)}
       >
-        <Text style={Object.assign({color: file.id === index ? '#f33': '#000'}, this.styles.buttonTitle)}>
+        <Text style={{color: file.id === index ? '#f33': '#000', ...this.styles.buttonTitle}}>
           {file.title}
         </Text>
       </TouchableHighlight>
