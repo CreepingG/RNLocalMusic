@@ -112,6 +112,7 @@ class PlayControl {
 
 	add(url: string){
 		this.list.push(MakeFile(url, this.list.length));
+		this.save();
 	}
 
 	get current(): File{
