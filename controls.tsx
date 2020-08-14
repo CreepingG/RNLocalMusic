@@ -126,9 +126,10 @@ class PlayControl {
 			const json = await RNFS.readFile(filePath);
 			this.list = JSON.parse(json);
 		}
-		else{
-			const urls = await GetAllFiles('/storage/emulated/0/Music');
-			this.list = urls.map(MakeFile);
+		let urls = await GetAllFiles('/storage/emulated/0/Music');
+		urls.filter(url => this.list.every(file => file.url !== url));
+		if (urls){
+			urls.forEach(url => this.add(url));
 			await this.saveList();
 		}
 
