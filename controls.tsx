@@ -87,11 +87,27 @@ class PlayControl {
 	constructor() {
 		this.list = [];
 		this.history = new HistoryList();
+		console.log(1);
 	}
 
+	filePath = [RNFS.DocumentDirectoryPath + '/MusicLists/0.js', RNFS.DocumentDirectoryPath + '/MusicLists']
+
 	async load(){
-		const urls = await GetAllFiles('/storage/emulated/0/Music');
-		this.list = urls.map(MakeFile);
+		let exists = await RNFS.exists(this.filePath[0]);
+		if (exists){
+			const json = await RNFS.readFile(this.filePath[0]);
+			this.list = JSON.parse(json);
+		}
+		else{
+			const urls = await GetAllFiles('/storage/emulated/0/Music');
+			this.list = urls.map(MakeFile);
+			await this.save();
+		}
+	}
+
+	async save(){
+		await RNFS.mkdir(this.filePath[1]);
+		await RNFS.writeFile(this.filePath[0], JSON.stringify(this.list));
 	}
 
 	add(url: string){

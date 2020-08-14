@@ -2,9 +2,10 @@
 import React, { Component } from 'react';
 import { 
   StyleSheet, 
-  View, Text, 
+  View, Text, TextInput, 
   ScrollView, FlatList, 
-  TouchableOpacity, TouchableWithoutFeedback, TouchableHighlight
+  TouchableOpacity, TouchableWithoutFeedback, TouchableHighlight,
+  Alert
 } from 'react-native';
 import TrackPlayer from "react-native-track-player"; //https://react-native-track-player.js.org/
 import RNFileSelector from 'react-native-file-selector'; //https://github.com/prscX/react-native-file-selector
@@ -21,7 +22,7 @@ export default class App extends Component {
       duration: 0,
       position: 0,
       jumpStep: 5,
-      curFile: {},
+      title: '',
       playOrder: 2,
     };
   }
@@ -84,13 +85,13 @@ export default class App extends Component {
     Controls.getPosition = () => this.state.position;
     Controls.getDuration = () => this.state.duration;
     Controls.onStart = async file => {
-      this.setState({curFile: file});
+      this.setState({title: file.title});
       this.setState({
         duration: await TrackPlayer.getDuration(),
         position: 0
       });
     };
-    //await Controls.load();
+    await Controls.load();
     await Controls.skipToNext(true);
 
     this.timerID = setInterval(
@@ -128,7 +129,7 @@ export default class App extends Component {
 
   next = () => Controls.skipToNext();
 
-  previous = () => Controls.skipToPrevious() || this.log('已是第一首');
+  previous = () => Controls.skipToPrevious().then(result=>result||this.log('已是第一首'));
   //#endregion
   
   //#region UI
@@ -194,7 +195,7 @@ export default class App extends Component {
     return (
       <View style={{flex:1}}>
         <View style={this.styles.main}>
-          <Text style={this.styles.title}>{this.state.curFile.title}</Text>
+          <Text style={this.styles.title}>{this.state.title}</Text>
 
           <ProgressBar
             position={this.state.position}
@@ -246,6 +247,13 @@ export default class App extends Component {
             color="#841584"
           />
           <FooterButton
+            onPress={()=>{
+              this.musicConfig.show(Controls.current);
+            }}
+            title='config'
+            color="#3dd"
+          />
+          <FooterButton
             onPress={()=>this.selectFile()}
             title="+"
             color="#fa3"
@@ -263,13 +271,41 @@ export default class App extends Component {
         ></PlayList>
         <Hint ref={ref => this.hint = ref}></Hint>
         <Modal ref={ref => this.modal = ref}></Modal>
-        <MusicInfo  ref={ref => this.musicInfo = ref}></MusicInfo>
+        <MusicConfig 
+          ref={ref => this.musicConfig = ref}
+          onSubmit={() => this.setState({title: Controls.current.title})}
+        ></MusicConfig>
       </View>
     );
   }
 }
 
 //#region Components
+function FormatTime(seconds){
+  seconds = Math.round(seconds);
+  let minute = Math.floor(seconds/60);
+  seconds = seconds%60;
+  return `${minute<10 ? '0' : ''}${minute}:${seconds<10 ? '0' : ''}${seconds}`;
+}
+
+function ParseTime(text){
+  try{
+    console.log(text);
+    let [_, min, sec] = text.match(/(\d+):(\d\d(\.\d+)?)/);
+    console.log(min, sec);
+    return ToNumber(min) * 60 + ToNumber(sec);
+  }
+  catch{
+    throw new Error(`"${text}"不是有效的时间`);
+  }
+}
+
+function ToNumber(s){
+  let n = Number(s);
+  if (isNaN(n)) throw new Error(`"${s}"不是数字`);
+  return n;
+}
+
 class ProgressBar extends Component{
   constructor(props) {
     super(props)
@@ -307,13 +343,6 @@ class ProgressBar extends Component{
     }
   });
 
-  formatTime(seconds){
-    seconds = Math.round(seconds);
-    let minute = Math.floor(seconds/60);
-    seconds = seconds%60;
-    return `${minute<10 ? '0' : ''}${minute}:${seconds<10 ? '0' : ''}${seconds}`;
-  }
-
   onPressOut = (event) => this.props.duration > 0 && this.props.jump(event.nativeEvent.locationX/this.state.width);
 
   onLayout = (event) => this.setState({width: event.nativeEvent.layout.width});
@@ -323,7 +352,7 @@ class ProgressBar extends Component{
     return(
       <View style={this.styles.container}>
         <Text style={this.styles.text}>
-          {this.formatTime(position)}
+          {FormatTime(position)}
         </Text>
         <Pressable style={this.styles.barContainer} onPressOut={this.onPressOut}>
           <View style={this.styles.bar}  onLayout={this.onLayout}>
@@ -332,7 +361,7 @@ class ProgressBar extends Component{
           </View>
         </Pressable>
         <Text style={this.styles.text}>
-          {duration>0 ? this.formatTime(duration) : '??:??'}
+          {duration>0 ? FormatTime(duration) : '??:??'}
         </Text>
       </View>
     );
@@ -618,93 +647,176 @@ class PlayList extends Component{
   }
 }
 
-class MusicInfo extends Component{
+class MusicConfig extends Component{
   constructor(props) {
     super(props)
     this.state = {
-      show: false
+      show: false,
+      params: {title:'aciabviabvuajbdviaydhfnaujksfbagbiagb'}
     }
   }
 
   styles = StyleSheet.create({
     container: {
+      position: 'absolute',
       width: '100%',
       height: '100%',
-      position: 'absolute',
+      padding: 20,
       zIndex: 8,
       top: 0,
       left: 0,
       backgroundColor: 'rgba(0,0,0,0.5)',
       alignItems: 'center',
       justifyContent: 'center',
+      fontSize: 18,
     },
     visualArea: {
-      height: '80%',
-      margin: 20,
+      width: '100%',
       padding: 20,
       borderRadius: 10,
       backgroundColor: '#fff'
     },
+    line: {
+      height: 60,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-around'
+    },
+    lineTitle: {
+      width: 65,
+      textAlign: 'center',
+    },
+    lineContent: {
+      width: '60%',
+      flexDirection: 'row',
+      alignContent: 'center'
+    },
+    input: {
+      flex: 1,
+      padding: 0,
+      textAlign: 'center',
+      borderColor: '#888',
+      borderStyle: 'solid',
+      borderWidth: 1,
+    },
+    buttonLine: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      padding: 10
+    },
     button: {
-      flex: 1,
-      height: 50
-    },
-    buttonTitle: {
-      textAlignVertical: 'center',
-      fontSize: 16,
-      flex: 1,
-    },
+      fontSize: 22,
+      backgroundColor: '#aee',
+      borderRadius: 5,
+      padding: 8
+    }
   });
-
-  params = [
-    ['duration', '时长', 0],
-    ['title', '标题'],
-    ['weight', '随机权重', 10],
-    ['volume', '音量', 0.8]
-  ]
 
   show(file){
     this.setState({show: true});
-    this.list = [];
-
+    this.file = file;
+    let params = {};
+    for (let pair of Object.entries(file)){
+      if (pair[0].endsWith('Time')) pair[1] = FormatTime(pair[1]);
+      params[pair[0]] = pair[1].toString();
+    }
+    this.setState({params});
   }
 
-  hide(){
-    this.setState({show: false});
+  hide = () => this.setState({show: false});
+
+  submit = ()=>{
+    const params = this.state.params;
+    const file = this.file;
+    try{
+      file.title = params.title;
+      file.weight = ToNumber(params.weight);
+      file.volume = ToNumber(params.volume);
+      file.startTime = ParseTime(params.startTime);
+      file.endTime = ParseTime(params.endTime);
+      this.props.onSubmit(file);
+      this.hide();
+    }
+    catch(err){
+      Alert.alert('提交失败', err.message);
+    }
   }
 
   render() {
-    const {list, index} = this.props;
-    const play = (index)=>{
-      this.props.start(index);
-      this.hide();
-    }
-    const renderItem = ({item: file}) => (
-      <TouchableHighlight
-        style={this.styles.button}
-        underlayColor='#eee'
-        onPress={()=>play(file.id)}
-      >
-        <Text style={{color: file.id === index ? '#f33': '#000', ...this.styles.buttonTitle}}>
-          {file.title}
-        </Text>
-      </TouchableHighlight>
-    );
     return this.state.show && (
       <View style={this.styles.container}>
-        <View style={this.styles.visualArea} >
-          <FlatList
-            data={list}
-            renderItem={renderItem}
-            keyExtractor={file => file.id.toString()}
-            extraData={index}
-            getItemLayout={(data, index)=>({
-              length: 50,
-              offset: 50 * index,
-              index
-            })}
-            initialScrollIndex={Math.max(0, index-1)}
-          />
+        <View style={this.styles.visualArea}>
+          <ScrollView>
+            <View style={this.styles.line}>
+              <Text style={this.styles.lineTitle}>标题</Text>
+              <View style={this.styles.lineContent}>
+                <TextInput
+                  style={this.styles.input}
+                  value={this.state.params.title}
+                  onChangeText={text => this.setState({
+                    params: {...this.state.params, title: text}
+                  })}
+                  multiline={true}
+                ></TextInput>
+              </View>
+            </View>
+            <View style={this.styles.line}>
+              <Text style={this.styles.lineTitle}>随机权重</Text>
+              <View style={this.styles.lineContent}>
+                <TextInput
+                  style={this.styles.input}
+                  value={this.state.params.weight}
+                  onChangeText={text => this.setState({
+                    params: {...this.state.params, weight: text}
+                  })}
+                ></TextInput>
+              </View>
+            </View>
+            <View style={this.styles.line}>
+              <Text style={this.styles.lineTitle}>音量[0,1]</Text>
+              <View style={this.styles.lineContent}>
+                <TextInput
+                  style={this.styles.input}
+                  value={this.state.params.volume}
+                  onChangeText={text => this.setState({
+                    params: {...this.state.params, volumes: text}
+                  })}
+                ></TextInput>
+              </View>
+            </View>
+            <View style={this.styles.line}>
+              <Text style={this.styles.lineTitle}>播放区间</Text>
+              <View style={this.styles.lineContent}>
+                <TextInput
+                  style={this.styles.input}
+                  value={this.state.params.startTime}
+                  onChangeText={text => this.setState({
+                    params: {...this.state.params, startTime: text}
+                  })}
+                ></TextInput>
+                <Text style={{width: 20, textAlign: 'center', textAlignVertical: 'center'}}>~</Text>
+                <TextInput
+                  style={this.styles.input}
+                  value={this.state.params.endTime}
+                  onChangeText={text => this.setState({
+                    params: {...this.state.params, endTime: text}
+                  })}
+                ></TextInput>
+              </View>
+            </View>
+            <View style={this.styles.buttonLine}>
+              <TouchableHighlight
+                onPress={this.submit}
+              >
+                <Text style={this.styles.button}>提交</Text>
+              </TouchableHighlight>
+              <TouchableHighlight
+                onPress={this.hide}
+              >
+                <Text style={this.styles.button}>取消</Text>
+              </TouchableHighlight>
+            </View>
+          </ScrollView>
         </View>
       </View>
     )
